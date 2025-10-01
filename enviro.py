@@ -250,3 +250,64 @@ final_df = pd.DataFrame(all_data)
 final_df.to_csv(output_csv_file, index=False)
 print("Final dataset saved.")
 
+import pandas as pd
+import numpy as np
+
+# Load CSV
+df = pd.read_csv("/content/city_air_weather_osm.csv")
+
+# -----------------------------
+# 1. Handle Missing Values
+# -----------------------------
+numeric_cols = ['pm2_5', 'pm10', 'no2', 'co', 'so2', 'o3',
+                'temp_day', 'temp_min', 'temp_max', 'humidity', 'pressure',
+                'wind_speed', 'wind_deg', 'clouds',
+                'road_count', 'industrial_count', 'dump_count', 'farmland_count']
+
+for col in numeric_cols:
+    df[col] = df[col].fillna(df[col].median())
+
+# -----------------------------
+# 2. Convert Timestamp
+# -----------------------------
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+# -----------------------------
+# 3. Encode City Names
+# -----------------------------
+df['city_code'] = df['city'].astype('category').cat.codes
+
+# -----------------------------
+# 4. OSM Feature Engineering
+# -----------------------------
+# Example: convert raw counts to relative features
+# You can normalize by max count across all cities
+df['road_density'] = df['road_count'] / df['road_count'].max()
+df['industrial_density'] = df['industrial_count'] / df['industrial_count'].max()
+df['dump_density'] = df['dump_count'] / df['dump_count'].max()
+df['farmland_density'] = df['farmland_count'] / df['farmland_count'].max()
+
+# Optionally drop raw counts
+df = df.drop(['road_count','industrial_count','dump_count','farmland_count'], axis=1)
+
+# -----------------------------
+# 5. Feature Scaling
+# -----------------------------
+from sklearn.preprocessing import MinMaxScaler
+
+scaler_cols = ['pm2_5','pm10','no2','co','so2','o3',
+               'temp_day','temp_min','temp_max','humidity','pressure',
+               'wind_speed','wind_deg','clouds',
+               'road_density','industrial_density','dump_density','farmland_density']
+
+scaler = MinMaxScaler()
+df[scaler_cols] = scaler.fit_transform(df[scaler_cols])
+
+# -----------------------------
+# 6. Save Preprocessed File
+# -----------------------------
+df.to_csv("/content/city_air_weather_osm_preprocessed.csv", index=False)
+
+print("Preprocessing Done. Sample data:")
+print(df.isnull().sum())
+
