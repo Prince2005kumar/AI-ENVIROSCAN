@@ -10,12 +10,12 @@ Original file is located at
 !pip install opendatasets
 
 import opendatasets as op
-op.download("https://www.kaggle.com/datasets/arjunprasadsarkhel/indian-city-latitude-longitude")
+op.download("https://www.kaggle.com/datasets/omkargowda/indian-cities-lat-long/data")
 
 import pandas as pd
-df = pd.read_csv("/content/indian-city-latitude-longitude/India Cities LatLng.csv")
+df = pd.read_csv("/content/city_air_weather_osm.csv")
 df.shape
-df.head()
+# df.head()
 
 import pandas as pd
 import requests
@@ -25,7 +25,7 @@ from datetime import datetime
 # Step 1: Load the city dataset
 # -----------------------------
 # Corrected file path based on directory listing
-df = pd.read_csv("/content/indian-city-latitude-longitude/India Cities LatLng.csv")
+df = pd.read_csv("/content/indian-cities-lat-long/Indian_cities.csv")
 
 # Let's pick first 5 cities for testing
 test_cities = df.head(3)  # you can change the number later
@@ -51,9 +51,9 @@ def fetch_air_pollution(lat, lon, api_key):
 # Step 4: Test the API for a few cities
 # -----------------------------
 for idx, row in test_cities.iterrows():
-    city = row['city']        # adjust column name if different
-    lat = row['lat']     # adjust column name if different
-    lon = row['lng']    # adjust column name if different
+    city = row['City']        # adjust column name if different
+    lat = row['Latitude']     # adjust column name if different
+    lon = row['Longitude']    # adjust column name if different
 
     print(f"\nFetching air pollution data for {city} ({lat}, {lon})...")
     api_data = fetch_air_pollution(lat, lon, OWM_KEY)
@@ -72,19 +72,38 @@ import pandas as pd
 import requests
 from datetime import datetime, UTC
 import osmnx as ox
+import os
+import time # Import time for potential pauses
 
 from shapely.geometry import Polygon
 
 # -----------------------------
 # Load city dataset
 # -----------------------------
-df = pd.read_csv("/content/indian-city-latitude-longitude/India Cities LatLng.csv")
-cities = df.head(100)   # Process all cities
+df = pd.read_csv("/content/indian-cities-lat-long/Indian_cities.csv")
+# We will process all cities, but in batches
+# df=df.head(500)
+cities_to_process = df.copy()
 
 # -----------------------------
 # API Key
 # -----------------------------
 API_KEY = "13bd8cad6b6a28245eff4047fb57163f"   # <-- replace with your API key
+
+# Define the output file name
+output_csv_file = "city_air_weather_osm.csv"
+
+# Load existing data if the file already exists to resume
+all_data = []
+if os.path.exists(output_csv_file):
+    # print(f"Loading existing data from {output_csv_file}...")
+    existing_df = pd.read_csv(output_csv_file)
+    all_data = existing_df.to_dict('records')
+    processed_cities = existing_df['city'].tolist()
+    # print(f"Loaded {len(all_data)} records. {len(cities_to_process) - len(processed_cities)} cities remaining.")
+else:
+    processed_cities = []
+
 
 # -----------------------------
 # Fetch Air Pollution Data
@@ -92,7 +111,7 @@ API_KEY = "13bd8cad6b6a28245eff4047fb57163f"   # <-- replace with your API key
 def get_air_quality(lat, lon):
     url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
     resp = requests.get(url)
-    # print(f"Air pollution API response status code for {lat}, {lon}: {resp.status_code}") # Removed this line
+    # print(f"Air pollution API response status code for {lat}, {lon}: {resp.status_code}")
     if resp.status_code == 200:
         return resp.json()
     return None
@@ -104,7 +123,7 @@ def get_weather(lat, lon):
     # Changed to current weather endpoint for testing
     url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
     resp = requests.get(url)
-    # print(f"Weather API response status code for {lat}, {lon}: {resp.status_code}") # Removed this line
+    # print(f"Weather API response status code for {lat}, {lon}: {resp.status_code}")
     if resp.status_code == 200:
         return resp.json()
     return None
@@ -112,10 +131,6 @@ def get_weather(lat, lon):
 # -----------------------------
 # Fetch OSM Features (roads, industries, dump sites, farmland)
 # -----------------------------
-
-
-
-
 def get_osm_features(city_name):
     features = {"road_count": None, "industrial_count": None, "dump_count": None, "farmland_count": None}
     try:
@@ -125,92 +140,113 @@ def get_osm_features(city_name):
                 "amenity": "waste_disposal"}
 
         # Fetch features using ox.features_from_place
-        osm_features = ox.features_from_place(city_name, tags)
+        osm_features = ox.features_from_place(city_name + ", India", tags) # Added ", India" for better place identification
 
         # Count the features by type
-        features["road_count"] = len(osm_features[osm_features.geom_type.isin(['LineString', 'MultiLineString'])]) # Roads are linestrings
-        features["industrial_count"] = len(osm_features[osm_features['landuse'] == 'industrial'])
-        features["dump_count"] = len(osm_features[osm_features['amenity'] == 'waste_disposal'])
-        features["farmland_count"] = len(osm_features[osm_features['landuse'] == 'farmland'])
+        # Ensure columns exist before accessing
+        features["road_count"] = len(osm_features[osm_features.geom_type.isin(['LineString', 'MultiLineString'])]) if 'highway' in osm_features.columns else None
+        features["industrial_count"] = len(osm_features[osm_features['landuse'] == 'industrial']) if 'landuse' in osm_features.columns else None
+        features["dump_count"] = len(osm_features[osm_features['amenity'] == 'waste_disposal']) if 'amenity' in osm_features.columns else None
+        features["farmland_count"] = len(osm_features[osm_features['landuse'] == 'farmland']) if 'landuse' in osm_features.columns else None
 
 
     except Exception as e:
+
         # print(f"OSM fetch failed for {city_name}: {e}")
-        pass # Added pass statement to fix IndentationError
+        # Consider adding a small pause here to avoid overwhelming the API
+        # time.sleep(1)
+        pass
     return features
 
-
-
 # -----------------------------
-# Collect Data for Cities
+# Collect Data for Cities in Batches
 # -----------------------------
-all_data = []
+batch_size = 20 # Define batch size
+processed_count = len(processed_cities)
 
-for _, row in cities.iterrows():
-    city = row['city']
-    lat = row['lat']
-    lon = row['lng']
+for index, row in cities_to_process.iterrows():
+    city = row['City']
 
-    # print(f"\nFetching data for {city}...") # Removed this line
+    # Skip if city has already been processed
+    if city in processed_cities:
+        # print(f"Skipping {city}, already processed.")
+        continue
+
+    lat = row['Latitude']
+    lon = row['Longitude']
+
+    # print(f"\nFetching data for {city} ({processed_count + 1}/{len(cities_to_process)})...")
 
     pollution = get_air_quality(lat, lon)
     weather   = get_weather(lat, lon)
     osm_feat  = get_osm_features(city)
 
     if pollution and weather:
-        # take first entry for pollution
-        p = pollution['list'][0]
-        poll_comp = p['components']
-        poll_time = datetime.fromtimestamp(p['dt'], UTC)
+        try:
+            # take first entry for pollution
+            p = pollution['list'][0]
+            poll_comp = p['components']
+            poll_time = datetime.fromtimestamp(p['dt'], UTC)
 
-        # take first entry for weather
-        # The structure of current weather data is different from forecast data
-        # Need to adjust how weather data is extracted
-        w = weather # Current weather data is not a list
-        main_weather = w['main']
-        wind_weather = w['wind']
-        clouds_weather = w['clouds']
+            # take first entry for weather
+            w = weather
+            main_weather = w['main']
+            wind_weather = w['wind']
+            clouds_weather = w['clouds']
+
+            all_data.append({
+                "city": city,
+                "lat": lat,
+                "lon": lon,
+                "timestamp": poll_time,
+
+                # Pollution
+                "pm2_5": poll_comp.get('pm2_5'),
+                "pm10": poll_comp.get('pm10'),
+                "no2": poll_comp.get('no2'),
+                "co": poll_comp.get('co'),
+                "so2": poll_comp.get('so2'),
+                "o3": poll_comp.get('o3'),
+
+                # Weather - Adjusted for current weather data
+                "temp_day": main_weather.get('temp'),
+                "temp_min": main_weather.get('temp_min'),
+                "temp_max": main_weather.get('temp_max'),
+                "humidity": main_weather.get('humidity'),
+                "pressure": main_weather.get('pressure'),
+                "wind_speed": wind_weather.get('speed'),
+                "wind_deg": wind_weather.get('deg'),
+                "clouds": clouds_weather.get('all'),
+
+                # OSM Features
+                "road_count": osm_feat.get("road_count"),
+                "industrial_count": osm_feat.get("industrial_count"),
+                "dump_count": osm_feat.get("dump_count"),
+                "farmland_count": osm_feat.get("farmland_count")
+            })
+            processed_count += 1
+            processed_cities.append(city) # Add city to processed list
+
+        except Exception as e:
+            # print(f"Error processing data for {city}: {e}")
+            pass # Continue to next city if there's an error with data structure
 
 
-        all_data.append({
-            "city": city,
-            "lat": lat,
-            "lon": lon,
-            "timestamp": poll_time,
+    # Save incrementally after each batch
+    if processed_count % batch_size == 0 or processed_count == len(cities_to_process):
+        # print(f"Saving {processed_count} records to {output_csv_file}...")
+        final_df = pd.DataFrame(all_data)
+        final_df.to_csv(output_csv_file, index=False)
+        # print("Saved.")
+        # Optional: Add a small pause between batches
+        # time.sleep(5)
 
-            # Pollution
-            "pm2_5": poll_comp['pm2_5'],
-            "pm10": poll_comp['pm10'],
-            "no2": poll_comp['no2'],
-            "co": poll_comp['co'],
-            "so2": poll_comp['so2'],
-            "o3": poll_comp['o3'],
 
-            # Weather - Adjusted for current weather data
-            "temp_day": main_weather['temp'], # Using 'temp' for current temperature
-            "temp_min": main_weather['temp_min'],
-            "temp_max": main_weather['temp_max'],
-            "humidity": main_weather['humidity'],
-            "pressure": main_weather['pressure'],
-            "wind_speed": wind_weather['speed'],
-            "wind_deg": wind_weather.get('deg'), # 'deg' might not always be present
-            "clouds": clouds_weather['all'],
+# print("\nData collection complete.")
+# print(f"Final dataset size: {len(all_data)} records.")
 
-            # OSM Features
-            "road_count": osm_feat["road_count"],
-            "industrial_count": osm_feat["industrial_count"],
-            "dump_count": osm_feat["dump_count"],
-            "farmland_count": osm_feat["farmland_count"]
-        })
-
-# -----------------------------
-# Convert to DataFrame
-# -----------------------------
+# Final save (in case the last batch size was less than batch_size)
 final_df = pd.DataFrame(all_data)
-
-
-# Save as CSV for later preprocessing
-final_df.to_csv("city_air_weather_osm.csv", index=False)
-
-print("Dataset is ready.")
+final_df.to_csv(output_csv_file, index=False)
+print("Final dataset saved.")
 
