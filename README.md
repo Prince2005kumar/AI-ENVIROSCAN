@@ -29,4 +29,20 @@ Collect all features into a single row with timestamp.
 Save as CSV (city_air_weather_osm.csv) for downstream feature engineering, labeling, and ML model training.
 
 This dataset provides structured, multi-source input to enable pollution source prediction and geospatial analysis.
-                  
+
+
+Data Cleaning & Preprocessing
+
+The raw dataset was cleaned and transformed into a model-ready format:
+
+Missing Values – Handled using median imputation for all numeric features.
+
+Timestamp Conversion – Converted to standard datetime format.
+
+City Encoding – Assigned categorical codes to city names.
+
+OSM Feature Engineering – Converted raw counts (roads, industries, dumps, farmland) into normalized density features.
+
+Feature Scaling – Applied Min-Max scaling to all pollution, weather, and geospatial features for consistent model input.
+
+Final Output – Saved as city_air_weather_osm_preprocessed.csv for source labeling and ML training.                  
