@@ -371,16 +371,11 @@ plt.show()
 
 print("\nBased on Accuracy, the best performing model is:", performance_comparison.iloc[0]['Model'])
 
-# Note: A perfect accuracy (1.0000) on the test set might indicate potential overfitting,
-# especially with a small dataset or if the split was not representative.
-# Further validation (e.g., cross-validation on the combined dataset) might be necessary
-# for a more robust assessment of the model's generalization ability.
-
 import joblib
 import os
 
 # Assuming 'best_xgb_model' is the variable holding your trained XGBoost model
-# from the hyperparameter tuning step (cell 26331222).
+# from the hyperparameter tuning step.
 # Make sure to run that cell first to have the best_xgb_model available.
 
 # Define the filename for the exported model
